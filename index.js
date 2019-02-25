@@ -541,11 +541,73 @@ const createClient = (profile, userAgent, request = _request) => {
 		})
 	}
 
+	const remarks = ({north, west, south, east}, opt) => {
+		if ('number' !== typeof north) throw new TypeError('north must be a number.')
+		if ('number' !== typeof west) throw new TypeError('west must be a number.')
+		if ('number' !== typeof south) throw new TypeError('south must be a number.')
+		if ('number' !== typeof east) throw new TypeError('east must be a number.')
+		if (north <= south) throw new Error('north must be larger than south.')
+		if (east <= west) throw new Error('east must be larger than west.')
+
+		opt = Object.assign({
+			results: 1000, // maximum number of results
+			polylines: false, // return track shapes?
+			himFilters: []
+		}, opt || {})
+		opt.fromWhen = new Date(opt.fromWhen || Date.now())
+		if (Number.isNaN(+opt.fromWhen)) throw new TypeError('opt.fromWhen is invalid')
+		opt.toWhen = new Date(opt.toWhen || Date.now())
+		if (Number.isNaN(+opt.toWhen)) throw new TypeError('opt.toWhen is invalid')
+
+		return request(profile, userAgent, {...opt, remarks: true}, {
+			meth: 'HimGeoPos',
+			req: {
+				rect: profile.formatRectangle(profile, north, west, south, east),
+				maxNum: opt.results,
+				dateB: profile.formatDate(profile, opt.fromWhen),
+				timeB: profile.formatTime(profile, opt.fromWhen),
+				dateE: profile.formatDate(profile, opt.toWhen),
+				timeE: profile.formatTime(profile, opt.toWhen),
+				getPolyLine: !!opt.polylines,
+				himFltrL: opt.himFilters
+				// todo: `onlyHimId`, `prio`
+			}
+		})
+		.then(d => d.warnings)
+	}
+
+	const remark = (id, opt = {}) => {
+		if (!isNonEmptyString(id)) throw new TypeError('id must be a non-empty string.')
+
+		opt.fromWhen = new Date(opt.fromWhen || Date.now())
+		if (Number.isNaN(+opt.fromWhen)) throw new TypeError('opt.fromWhen is invalid')
+		if (!opt.toWhen) opt.toWhen = opt.fromWhen
+		else if (Number.isNaN(+opt.toWhen)) throw new TypeError('opt.toWhen is invalid')
+
+		return request(profile, userAgent, {...opt, remarks: true}, {
+			meth: 'HimDetails',
+			req: {
+				input: id,
+				date: profile.formatDate(profile, opt.fromWhen),
+				time: profile.formatTime(profile, opt.fromWhen),
+				endDate: profile.formatDate(profile, opt.toWhen),
+				endTime: profile.formatTime(profile, opt.toWhen)
+			}
+		})
+		.then((d) => {
+			const warning = d.warnings[d.msgRefL[0]]
+			if (!warning) throw new Error('invalid response')
+			return warning
+		})
+	}
+
 	const client = {departures, arrivals, journeys, locations, stop, nearby}
 	if (profile.trip) client.trip = trip
 	if (profile.radar) client.radar = radar
 	if (profile.refreshJourney) client.refreshJourney = refreshJourney
 	if (profile.reachableFrom) client.reachableFrom = reachableFrom
+	if (profile.remarks) client.remarks = remarks
+	if (profile.remark) client.remark = remark
 	Object.defineProperty(client, 'profile', {value: profile})
 	return client
 }
